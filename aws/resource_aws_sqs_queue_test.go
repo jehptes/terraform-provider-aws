@@ -229,9 +229,7 @@ func TestAccAWSSQSQueue_policy(t *testing.T) {
 	queueName := fmt.Sprintf("sqs-queue-%s", acctest.RandString(10))
 	topicName := fmt.Sprintf("sns-topic-%s", acctest.RandString(10))
 
-	expectedPolicyText := fmt.Sprintf(
-		`{"Version": "2012-10-17","Id": "sqspolicy","Statement":[{"Sid": "Stmt1451501026839","Effect": "Allow","Principal":"*","Action":"sqs:SendMessage","Resource":"arn:aws:sqs:us-west-2:470663696735:%s","Condition":{"ArnEquals":{"aws:SourceArn":"arn:aws:sns:us-west-2:470663696735:%s"}}}]}`,
-		topicName, queueName)
+	expectedPolicyText := `{"Version": "2012-10-17","Id": "sqspolicy","Statement":[{"Sid": "Stmt1451501026839","Effect": "Allow","Principal":"*","Action":"sqs:SendMessage","Resource":"arn:%[1]s:sqs:%[2]s:%[3]s:%[4]s","Condition":{"ArnEquals":{"aws:SourceArn":"arn:%[1]s:sns:%[2]s:%[3]s:%[5]s"}}}]}`
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
@@ -242,7 +240,7 @@ func TestAccAWSSQSQueue_policy(t *testing.T) {
 				Config: testAccAWSSQSConfig_PolicyFormat(topicName, queueName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckAWSSQSQueueExists("aws_sqs_queue.test-email-events", &queueAttributes),
-					testAccCheckAWSSQSQueuePolicyAttribute(&queueAttributes, expectedPolicyText),
+					testAccCheckAWSSQSQueuePolicyAttribute(&queueAttributes, fmt.Sprintf(expectedPolicyText, testAccGetPartition(), testAccGetRegion(), testAccGetAccountID(), topicName, queueName)),
 				),
 			},
 			{
@@ -638,7 +636,7 @@ resource "aws_sqs_queue" "queue" {
 func testAccAWSSQSConfigWithRedrive(name string) string {
 	return fmt.Sprintf(`
 resource "aws_sqs_queue" "my_queue" {
-  name                       = "tftestqueuq-%s"
+  name                       = "tftestqueuq-%[1]s"
   delay_seconds              = 0
   visibility_timeout_seconds = 300
 
@@ -651,9 +649,9 @@ EOF
 }
 
 resource "aws_sqs_queue" "my_dead_letter_queue" {
-  name = "tfotherqueuq-%s"
+  name = "tfotherqueuq-%[1]s"
 }
-`, name, name)
+`, name)
 }
 
 func testAccAWSSQSConfig_PolicyFormat(queue, topic string) string {
@@ -669,6 +667,12 @@ variable "sqs_name" {
 resource "aws_sns_topic" "test_topic" {
   name = var.sns_name
 }
+
+data "aws_partition" "current" {}
+
+data "aws_region" "current" {}
+
+data "aws_caller_identity" "current" {}
 
 resource "aws_sqs_queue" "test-email-events" {
   name                       = var.sqs_name
@@ -689,10 +693,10 @@ resource "aws_sqs_queue" "test-email-events" {
       "Effect": "Allow",
       "Principal": "*",
       "Action": "sqs:SendMessage",
-      "Resource": "arn:aws:sqs:us-west-2:470663696735:${var.sqs_name}",
+      "Resource": "arn:${data.aws_partition.current.partition}:sqs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.sqs_name}",
       "Condition": {
         "ArnEquals": {
-          "aws:SourceArn": "arn:aws:sns:us-west-2:470663696735:${var.sns_name}"
+          "aws:SourceArn": "arn:${data.aws_partition.current.partition}:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.sns_name}"
         }
       }
     }
